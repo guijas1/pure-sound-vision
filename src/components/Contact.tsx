@@ -93,7 +93,7 @@ const Contact = () => {
             <Card className="bg-card/50 backdrop-blur border-border/50 overflow-hidden">
               <CardContent className="p-0">
                 <iframe
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d14697.890283675067!2d-43.48762677265625!3d-22.898729299999997!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9be0caf1bffffff%3A0x3ff3f0b2e4b8f3f3!2sSant%C3%ADssimo%2C%20Rio%20de%20Janeiro%20-%20RJ!5e0!3m2!1spt-BR!2sbr!4v1620000000000!5m2!1spt-BR!2sbr"
+                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d58791.56043343983!2d-43.52364889589844!3d-22.898729!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9bde6f50000001%3A0x3cbd44641e16c7b9!2sSant%C3%ADssimo%2C%20Rio%20de%20Janeiro%20-%20RJ!5e0!3m2!1spt-BR!2sbr!4v1709000000000!5m2!1spt-BR!2sbr"
                   width="100%"
                   height="200"
                   style={{ border: 0 }}
