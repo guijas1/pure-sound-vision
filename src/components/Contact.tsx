@@ -103,6 +103,19 @@ const Contact = () => {
       return;
     }
 
+    if (isSubmitting) {
+      return;
+    }
+
+    if (lastSubmissionTime) {
+      const elapsed = Date.now() - lastSubmissionTime;
+      if (elapsed < COOLDOWN_MS) {
+        const seconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+        toast.error(`Aguarde ${seconds}s antes de enviar uma nova mensagem.`);
+        return;
+      }
+    }
+
     const normalizedData = {
       ...formData,
       phone: normalizePhone(formData.phone),
