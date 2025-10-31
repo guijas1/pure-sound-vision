@@ -3,37 +3,34 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Instagram, Phone, MapPin, MessageCircle } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
-import emailjs from "emailjs-com";
 
-// 🔐 Variáveis de ambiente (Vite usa import.meta.env)
-const SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || "";
-const TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || "";
-const PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "";
+const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || "";
+const CONTACT_WHATSAPP = import.meta.env.VITE_CONTACT_WHATSAPP || "";
+const CONTACT_INSTAGRAM = import.meta.env.VITE_CONTACT_INSTAGRAM || "";
+const CONTACT_LOCATION = import.meta.env.VITE_CONTACT_LOCATION || "";
+const CONTACT_MAP_EMBED_URL =
+  import.meta.env.VITE_CONTACT_MAP_EMBED_URL || import.meta.env.VITE_CONTACT_MAP_URL || "";
+const COOLDOWN_MS = 30_000;
+const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || "";
+const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || "";
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "";
+const EMAILJS_ACCESS_TOKEN = import.meta.env.VITE_EMAILJS_ACCESS_TOKEN || "";
+const EMAILJS_ENDPOINT =
+  import.meta.env.VITE_EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send";
+const REQUEST_TIMEOUT_MS = 10_000;
 
 const Contact = () => {
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!PUBLIC_KEY) {
-      console.warn("⚠️ VITE_EMAILJS_PUBLIC_KEY não definido. EmailJS não será inicializado.");
-      return;
-    }
-
-    try {
-      // @ts-ignore
-      emailjs.init(PUBLIC_KEY);
-    } catch (err) {
-      console.error("Erro ao inicializar o EmailJS:", err);
-    }
-  }, []);
-
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     phone: "",
     message: "",
   });
+  const [botField, setBotField] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lastSubmissionTime, setLastSubmissionTime] = useState<number | null>(null);
 
   // 🧩 Normaliza o telefone (remove símbolos e adiciona +55 se faltar)
   const normalizePhone = (phone: string) => {
@@ -41,6 +38,13 @@ const Contact = () => {
     const cleaned = digits.startsWith("0") ? digits.slice(1) : digits;
     return cleaned.startsWith("55") ? cleaned : `55${cleaned}`;
   };
+
+  const phoneSource = CONTACT_WHATSAPP || CONTACT_PHONE;
+  const whatsappLink = phoneSource
+    ? `https://wa.me/${normalizePhone(
+        phoneSource,
+      )}?text=Ol%C3%A1!%20Gostaria%20de%20solicitar%20um%20or%C3%A7amento.`
+    : "";
 
   // 🕒 Timestamp formatado
   const getFormattedTime = () => {
@@ -51,17 +55,51 @@ const Contact = () => {
     });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (botField.trim()) {
+      toast.error("Não foi possível enviar a mensagem.");
+      return;
+    }
 
     if (!formData.name || !formData.email || !formData.phone || !formData.message) {
       toast.error("Por favor, preencha todos os campos.");
       return;
     }
 
-    if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      toast.error("Informe um e-mail válido.");
+      return;
+    }
+
+    const digits = formData.phone.replace(/\D/g, "");
+    if (digits.length < 10 || digits.length > 13) {
+      toast.error("Informe um telefone válido com DDD.");
+      return;
+    }
+
+    if (isSubmitting) {
+      return;
+    }
+
+    if (lastSubmissionTime) {
+      const elapsed = Date.now() - lastSubmissionTime;
+      if (elapsed < COOLDOWN_MS) {
+        const seconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+        toast.error(`Aguarde ${seconds}s antes de enviar uma nova mensagem.`);
+        return;
+      }
+    }
+
+    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) {
       toast.error("Configuração do EmailJS ausente. Verifique o arquivo .env.");
-      console.error("Missing EmailJS config:", { SERVICE_ID, TEMPLATE_ID, PUBLIC_KEY });
+      console.error("Missing EmailJS config:", {
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        EMAILJS_PUBLIC_KEY,
+      });
       return;
     }
 
@@ -71,16 +109,62 @@ const Contact = () => {
       time: getFormattedTime(),
     };
 
-    emailjs
-      .send(SERVICE_ID, TEMPLATE_ID, normalizedData, PUBLIC_KEY)
-      .then(() => {
-        toast.success("Mensagem enviada com sucesso! Entraremos em contato em breve.");
-        setFormData({ name: "", email: "", phone: "", message: "" });
-      })
-      .catch((error) => {
-        console.error("Erro ao enviar e-mail:", error);
-        toast.error("Erro ao enviar mensagem. Tente novamente.");
+    const templateParams = {
+      ...normalizedData,
+      reply_to: formData.email,
+      bot_field: botField.trim() || undefined,
+      origin: window.location.href,
+    };
+
+    const payload: Record<string, unknown> = {
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY,
+      template_params: templateParams,
+    };
+
+    if (EMAILJS_ACCESS_TOKEN) {
+      payload.accessToken = EMAILJS_ACCESS_TOKEN;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch(EMAILJS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
       });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(errorBody || `EmailJS retornou o status ${response.status}`);
+      }
+
+      toast.success("Mensagem enviada com sucesso! Entraremos em contato em breve.");
+      setFormData({ name: "", email: "", phone: "", message: "" });
+      setBotField("");
+      setLastSubmissionTime(Date.now());
+    } catch (error) {
+      console.error("Erro ao enviar mensagem:", error);
+
+      if (error instanceof DOMException && error.name === "AbortError") {
+        toast.error("Tempo de resposta excedido. Verifique sua conexão e tente novamente.");
+        return;
+      }
+
+      toast.error("Erro ao enviar mensagem. Tente novamente.");
+    } finally {
+      window.clearTimeout(timeoutId);
+      setIsSubmitting(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -111,16 +195,24 @@ const Contact = () => {
                   </div>
                   <div>
                     <h3 className="font-bold mb-2">Telefone</h3>
-                    <p className="text-muted-foreground">(21) 99776-7702</p>
-                    <a
-                      href="https://wa.me/5521997767702?text=Olá!%20Gostaria%20de%20solicitar%20um%20orçamento."
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-2 text-primary underline hover:text-primary/80 transition-colors"
-                    >
-                      <MessageCircle className="w-4 h-4" />
-                      Abrir no WhatsApp
-                    </a>
+                    {CONTACT_PHONE ? (
+                      <p className="text-muted-foreground">{CONTACT_PHONE}</p>
+                    ) : (
+                      <p className="text-muted-foreground">
+                        Informe seu telefone no formulário e entraremos em contato com você.
+                      </p>
+                    )}
+                    {whatsappLink && (
+                      <a
+                        href={whatsappLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-primary underline hover:text-primary/80 transition-colors"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                        Abrir no WhatsApp
+                      </a>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -128,22 +220,36 @@ const Contact = () => {
 
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-6">
-                <a
-                  href="https://www.instagram.com/masterrsonorizacao?igsh=MTN3YTg1d2ozMThoNw=="
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-start gap-4 group"
-                >
-                  <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                    <Instagram className="w-6 h-6 text-primary" />
+                {CONTACT_INSTAGRAM ? (
+                  <a
+                    href={CONTACT_INSTAGRAM}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-start gap-4 group"
+                  >
+                    <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                      <Instagram className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold mb-2">Instagram</h3>
+                      <p className="text-muted-foreground group-hover:text-foreground transition-colors">
+                        Visite nosso perfil
+                      </p>
+                    </div>
+                  </a>
+                ) : (
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 rounded-full bg-primary/10">
+                      <Instagram className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold mb-2">Redes sociais</h3>
+                      <p className="text-muted-foreground">
+                        Nossas redes sociais serão divulgadas em breve.
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold mb-2">Instagram</h3>
-                    <p className="text-muted-foreground group-hover:text-foreground transition-colors">
-                      @masterrsonorizacao
-                    </p>
-                  </div>
-                </a>
+                )}
               </CardContent>
             </Card>
 
@@ -154,29 +260,31 @@ const Contact = () => {
                     <MapPin className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="font-bold mb-2">Localização</h3>
+                    <h3 className="font-bold mb-2">Atendimento</h3>
                     <p className="text-muted-foreground">
-                      Santíssimo, Rio de Janeiro - RJ
+                      {CONTACT_LOCATION || "Atendimento em todo o Rio de Janeiro."}
                     </p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <Card className="bg-card/50 backdrop-blur border-border/50 overflow-hidden">
-              <CardContent className="p-0">
-                <iframe
-                  src="https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d58791.56043343983!2d-43.52364889589844!3d-22.898729!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x9bde6f50000001%3A0x3cbd44641e16c7b9!2sSant%C3%ADssimo%2C%20Rio%20de%20Janeiro%20-%20RJ!5e0!3m2!1spt-BR!2sbr!4v1709000000000!5m2!1spt-BR!2sbr"
-                  width="100%"
-                  height="200"
-                  style={{ border: 0 }}
-                  allowFullScreen
-                  loading="lazy"
-                  referrerPolicy="no-referrer-when-downgrade"
-                  title="Localização - Santíssimo, Rio de Janeiro"
-                />
-              </CardContent>
-            </Card>
+            {CONTACT_MAP_EMBED_URL && (
+              <Card className="bg-card/50 backdrop-blur border-border/50 overflow-hidden">
+                <CardContent className="p-0">
+                  <iframe
+                    src={CONTACT_MAP_EMBED_URL}
+                    width="100%"
+                    height="200"
+                    style={{ border: 0 }}
+                    allowFullScreen
+                    loading="lazy"
+                    referrerPolicy="no-referrer-when-downgrade"
+                    title="Localização"
+                  />
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Formulário */}
@@ -184,6 +292,21 @@ const Contact = () => {
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-8">
                 <form onSubmit={handleSubmit} className="space-y-6">
+                  <div className="hidden" aria-hidden>
+                    <label htmlFor="company" className="sr-only">
+                      Não preencha este campo
+                    </label>
+                    <input
+                      id="company"
+                      name="company"
+                      type="text"
+                      tabIndex={-1}
+                      autoComplete="off"
+                      value={botField}
+                      onChange={(event) => setBotField(event.target.value)}
+                    />
+                  </div>
+
                   <Input
                     name="name"
                     placeholder="Nome da Igreja ou Responsável"
@@ -228,8 +351,9 @@ const Contact = () => {
                     type="submit"
                     size="lg"
                     className="w-full text-lg py-6 transition-all hover:scale-105"
+                    disabled={isSubmitting}
                   >
-                    Enviar Mensagem
+                    {isSubmitting ? "Enviando..." : "Enviar Mensagem"}
                   </Button>
                 </form>
               </CardContent>
