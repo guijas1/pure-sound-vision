@@ -1,0 +1,100 @@
+<!-- Template: Contato do Site (dark) -->
+<div style="margin:0;padding:0;background:#0b0b0b;color:#eaeaea;font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;">
+  <!-- container -->
+  <div style="max-width:640px;margin:0 auto;padding:24px;">
+    
+    <!-- header -->
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+      <tr>
+        <td style="padding:16px 18px;background:#121212;border:1px solid #222;border-radius:10px;">
+          <div style="font-size:14px;letter-spacing:.3px;color:#bdbdbd;">Notificação de contato</div>
+          <div style="font-size:20px;line-height:1.4;margin-top:6px;color:#ffffff;">
+            Você recebeu uma nova mensagem de <strong>{{name}}</strong>.
+          </div>
+          <div style="margin-top:6px;font-size:12px;color:#8a8a8a;">{{time}}</div>
+        </td>
+      </tr>
+    </table>
+
+    <!-- card principal -->
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-top:16px;">
+      <tr>
+        <td style="padding:20px;background:#121212;border:1px solid #222;border-radius:10px;">
+          <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+            <tr>
+              <!-- avatar / ícone -->
+              <td style="vertical-align:top;padding-right:14px;">
+                <div role="img" aria-label="Contato" 
+                     style="width:40px;height:40px;border-radius:8px;background:#1b1b1b;border:1px solid #2a2a2a;display:flex;align-items:center;justify-content:center;font-size:22px;">
+                  👤
+                </div>
+              </td>
+
+              <!-- dados -->
+              <td style="vertical-align:top;">
+                <div style="font-size:16px;color:#ffffff;"><strong>{{name}}</strong></div>
+
+                <div style="margin-top:6px;">
+                  <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;">
+                    <tr>
+                      <td style="font-size:12px;color:#9b9b9b;padding-right:10px;">📧 Email:</td>
+                      <td style="font-size:13px;color:#eaeaea;">
+                        <a href="mailto:{{email}}" style="color:#79b8ff;text-decoration:none;">{{email}}</a>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td style="font-size:12px;color:#9b9b9b;padding-right:10px;">📱 Telefone:</td>
+                      <td style="font-size:13px;color:#eaeaea;">
+                        <a href="tel:{{phone}}" style="color:#79b8ff;text-decoration:none;">{{phone}}</a>
+                      </td>
+                    </tr>
+                  </table>
+                </div>
+
+                <!-- mensagem -->
+                <div style="margin-top:14px;padding:14px;border:1px dashed #2a2a2a;background:#0f0f0f;border-radius:8px;">
+                  <div style="font-size:12px;color:#9b9b9b;margin-bottom:6px;">Mensagem</div>
+                  <div style="font-size:15px;line-height:1.6;color:#eaeaea;white-space:pre-wrap;">
+                    {{message}}
+                  </div>
+                </div>
+
+                <!-- ações rápidas -->
+                <table role="presentation" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-top:16px;">
+                  <tr>
+                    <td>
+                      <a href="mailto:{{email}}" 
+                         style="display:inline-block;padding:10px 14px;background:#1e90ff;color:#ffffff;text-decoration:none;border-radius:8px;border:1px solid #2a2a2a;font-size:14px;">
+                        Responder por Email
+                      </a>
+                    </td>
+                    <td style="width:10px;"></td>
+                    <td>
+                      <a href="tel:{{phone}}" 
+                         style="display:inline-block;padding:10px 14px;background:#1b1b1b;color:#eaeaea;text-decoration:none;border-radius:8px;border:1px solid #2a2a2a;font-size:14px;">
+                        Ligar agora
+                      </a>
+                    </td>
+                  </tr>
+                </table>
+
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <!-- rodapé -->
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border-collapse:collapse;margin-top:16px;">
+      <tr>
+        <td style="padding:14px 18px;background:#0f0f0f;border:1px solid #1d1d1d;border-radius:10px;text-align:center;">
+          <div style="font-size:12px;color:#8a8a8a;">
+            Este e-mail foi gerado automaticamente pelo formulário de contato do site.
+          </div>
+        </td>
+      </tr>
+    </table>
+
+  </div>
+</div>
