@@ -5,7 +5,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Instagram, Phone, MapPin, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ContactRequestError, submitContactRequest } from "@/lib/contact";
 
 const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || "";
 const CONTACT_WHATSAPP = import.meta.env.VITE_CONTACT_WHATSAPP || "";
@@ -14,6 +13,13 @@ const CONTACT_LOCATION = import.meta.env.VITE_CONTACT_LOCATION || "";
 const CONTACT_MAP_EMBED_URL =
   import.meta.env.VITE_CONTACT_MAP_EMBED_URL || import.meta.env.VITE_CONTACT_MAP_URL || "";
 const COOLDOWN_MS = 30_000;
+const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || "";
+const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || "";
+const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "";
+const EMAILJS_ACCESS_TOKEN = import.meta.env.VITE_EMAILJS_ACCESS_TOKEN || "";
+const EMAILJS_ENDPOINT =
+  import.meta.env.VITE_EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send";
+const REQUEST_TIMEOUT_MS = 10_000;
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -87,16 +93,74 @@ const Contact = () => {
       }
     }
 
+    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) {
+      toast.error("Configuração do EmailJS ausente. Verifique o arquivo .env.");
+      console.error("Missing EmailJS config:", {
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        EMAILJS_PUBLIC_KEY,
+      });
+      return;
+    }
+
+    if (isSubmitting) {
+      return;
+    }
+
+    if (lastSubmissionTime) {
+      const elapsed = Date.now() - lastSubmissionTime;
+      if (elapsed < COOLDOWN_MS) {
+        const seconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+        toast.error(`Aguarde ${seconds}s antes de enviar uma nova mensagem.`);
+        return;
+      }
+    }
+
     const normalizedData = {
       ...formData,
       phone: normalizePhone(formData.phone),
       time: getFormattedTime(),
     };
 
+    const templateParams = {
+      ...normalizedData,
+      reply_to: formData.email,
+      bot_field: botField.trim() || undefined,
+      origin: window.location.href,
+    };
+
+    const payload: Record<string, unknown> = {
+      service_id: EMAILJS_SERVICE_ID,
+      template_id: EMAILJS_TEMPLATE_ID,
+      user_id: EMAILJS_PUBLIC_KEY,
+      template_params: templateParams,
+    };
+
+    if (EMAILJS_ACCESS_TOKEN) {
+      payload.accessToken = EMAILJS_ACCESS_TOKEN;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
     setIsSubmitting(true);
 
     try {
-      await submitContactRequest({ ...normalizedData, botField: botField.trim() || undefined });
+      const response = await fetch(EMAILJS_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.text().catch(() => "");
+        throw new Error(errorBody || `EmailJS retornou o status ${response.status}`);
+      }
+
       toast.success("Mensagem enviada com sucesso! Entraremos em contato em breve.");
       setFormData({ name: "", email: "", phone: "", message: "" });
       setBotField("");
@@ -104,20 +168,14 @@ const Contact = () => {
     } catch (error) {
       console.error("Erro ao enviar mensagem:", error);
 
-      if (error instanceof ContactRequestError) {
-        if (error.message === "CONTACT_ENDPOINT_NOT_CONFIGURED") {
-          toast.error("Serviço de contato indisponível. Tente novamente mais tarde.");
-          return;
-        }
-
-        if (error.message === "REQUEST_TIMEOUT") {
-          toast.error("Tempo de resposta excedido. Verifique sua conexão e tente novamente.");
-          return;
-        }
+      if (error instanceof DOMException && error.name === "AbortError") {
+        toast.error("Tempo de resposta excedido. Verifique sua conexão e tente novamente.");
+        return;
       }
 
       toast.error("Erro ao enviar mensagem. Tente novamente.");
     } finally {
+      window.clearTimeout(timeoutId);
       setIsSubmitting(false);
     }
   };
