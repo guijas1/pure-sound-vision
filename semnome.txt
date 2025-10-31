@@ -6,7 +6,6 @@ import { Instagram, Phone, MapPin, MessageCircle } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-// 🔧 Variáveis de ambiente
 const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || "";
 const CONTACT_WHATSAPP = import.meta.env.VITE_CONTACT_WHATSAPP || "";
 const CONTACT_INSTAGRAM = import.meta.env.VITE_CONTACT_INSTAGRAM || "";
@@ -14,8 +13,6 @@ const CONTACT_LOCATION = import.meta.env.VITE_CONTACT_LOCATION || "";
 const CONTACT_MAP_EMBED_URL =
   import.meta.env.VITE_CONTACT_MAP_EMBED_URL || import.meta.env.VITE_CONTACT_MAP_URL || "";
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080";
-
-// ⚙️ Configurações
 const COOLDOWN_MS = 30_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -37,7 +34,6 @@ const Contact = () => {
     return cleaned.startsWith("55") ? cleaned : `55${cleaned}`;
   };
 
-  // 🔗 Link de WhatsApp automático
   const phoneSource = CONTACT_WHATSAPP || CONTACT_PHONE;
   const whatsappLink = phoneSource
     ? `https://wa.me/${normalizePhone(
@@ -45,14 +41,12 @@ const Contact = () => {
       )}?text=Ol%C3%A1!%20Gostaria%20de%20solicitar%20um%20or%C3%A7amento.`
     : "";
 
-  // 🕒 Gera timestamp formatado
   const getFormattedTime = () =>
     new Date().toLocaleString("pt-BR", {
       timeZone: "America/Sao_Paulo",
       hour12: false,
     });
 
-  // ✉️ Envio de formulário
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -146,9 +140,9 @@ const Contact = () => {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* 🧭 Coluna lateral */}
+          {/* Coluna lateral */}
           <div className="space-y-6 animate-fade-in">
-            {/* 📞 Telefone */}
+            {/* Telefone */}
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-6">
                 <div className="flex items-start gap-4">
@@ -169,7 +163,7 @@ const Contact = () => {
                         href={whatsappLink}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="inline-flex items-center gap-2 text-primary underline hover:text-primary/80 transition-colors"
+                        className="inline-flex items-center gap-2 text-primary underline hover:text-primary/80"
                       >
                         <MessageCircle className="w-4 h-4" />
                         Abrir no WhatsApp
@@ -180,31 +174,43 @@ const Contact = () => {
               </CardContent>
             </Card>
 
-            {/* 📸 Instagram */}
-            {CONTACT_INSTAGRAM && (
-              <Card className="bg-card/50 backdrop-blur border-border/50">
-                <CardContent className="p-6">
+            {/* Instagram */}
+            <Card className="bg-card/50 backdrop-blur border-border/50">
+              <CardContent className="p-6">
+                {CONTACT_INSTAGRAM ? (
                   <a
                     href={CONTACT_INSTAGRAM}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-start gap-4 group"
                   >
-                    <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors">
+                    <div className="p-3 rounded-full bg-primary/10 group-hover:bg-primary/20">
                       <Instagram className="w-6 h-6 text-primary" />
                     </div>
                     <div>
                       <h3 className="font-bold mb-2">Instagram</h3>
-                      <p className="text-muted-foreground group-hover:text-foreground transition-colors">
+                      <p className="text-muted-foreground group-hover:text-foreground">
                         Visite nosso perfil
                       </p>
                     </div>
                   </a>
-                </CardContent>
-              </Card>
-            )}
+                ) : (
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 rounded-full bg-primary/10">
+                      <Instagram className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold mb-2">Redes sociais</h3>
+                      <p className="text-muted-foreground">
+                        Nossas redes sociais serão divulgadas em breve.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-            {/* 📍 Localização */}
+            {/* Localização */}
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-6">
                 <div className="flex items-start gap-4">
@@ -221,7 +227,7 @@ const Contact = () => {
               </CardContent>
             </Card>
 
-            {/* 🗺️ Mapa embed */}
+            {/* Mapa */}
             {CONTACT_MAP_EMBED_URL && (
               <Card className="bg-card/50 backdrop-blur border-border/50 overflow-hidden">
                 <CardContent className="p-0">
@@ -240,7 +246,7 @@ const Contact = () => {
             )}
           </div>
 
-          {/* ✉️ Formulário */}
+          {/* Formulário */}
           <div className="lg:col-span-2 animate-fade-in-up">
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-8">
