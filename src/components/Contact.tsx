@@ -3,21 +3,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Instagram, Phone, MapPin, MessageCircle } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
-// 🔧 Variáveis de ambiente
 const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || "";
 const CONTACT_WHATSAPP = import.meta.env.VITE_CONTACT_WHATSAPP || "";
 const CONTACT_INSTAGRAM = import.meta.env.VITE_CONTACT_INSTAGRAM || "";
 const CONTACT_LOCATION = import.meta.env.VITE_CONTACT_LOCATION || "";
 const CONTACT_MAP_EMBED_URL =
   import.meta.env.VITE_CONTACT_MAP_EMBED_URL || import.meta.env.VITE_CONTACT_MAP_URL || "";
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:8080";
 
-// ⚙️ Configurações
+const API_URL = import.meta.env.VITE_API_URL;
 const COOLDOWN_MS = 30_000;
-const REQUEST_TIMEOUT_MS = 10_000;
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -25,34 +22,73 @@ const Contact = () => {
     email: "",
     phone: "",
     message: "",
+    turnstileToken: "",
   });
+
   const [botField, setBotField] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSubmissionTime, setLastSubmissionTime] = useState<number | null>(null);
 
-  // 🧩 Normaliza o telefone (remove símbolos e adiciona +55 se faltar)
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+
+  // -------------------------------
+  // Cloudflare Turnstile
+  // -------------------------------
+  useEffect(() => {
+    (window as any).onTurnstileSuccess = (token: string) => {
+      console.log("Turnstile token:", token);
+
+      setFormData((prev) => ({
+        ...prev,
+        turnstileToken: token,
+      }));
+    };
+
+    const interval = setInterval(() => {
+      if ((window as any).turnstile && turnstileRef.current) {
+        (window as any).turnstile.render(turnstileRef.current, {
+          sitekey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
+          callback: (token: string) => {
+            (window as any).onTurnstileSuccess(token);
+          },
+        });
+
+        clearInterval(interval);
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Normaliza telefone
   const normalizePhone = (phone: string) => {
     const digits = phone.replace(/\D/g, "");
     const cleaned = digits.startsWith("0") ? digits.slice(1) : digits;
     return cleaned.startsWith("55") ? cleaned : `55${cleaned}`;
   };
 
-  // 🔗 Link de WhatsApp automático
+  // ORDEM: WhatsApp -> Telefone
   const phoneSource = CONTACT_WHATSAPP || CONTACT_PHONE;
+
+  // Mensagem pronta do WhatsApp
+  const whatsappMessage = encodeURIComponent(
+    "Olá! Gostaria de solicitar um orçamento."
+  );
+
+  // Link final
   const whatsappLink = phoneSource
-    ? `https://wa.me/${normalizePhone(
-        phoneSource,
-      )}?text=Ol%C3%A1!%20Gostaria%20de%20solicitar%20um%20or%C3%A7amento.`
+    ? `https://wa.me/${normalizePhone(phoneSource)}?text=${whatsappMessage}`
     : "";
 
-  // 🕒 Gera timestamp formatado
-  const getFormattedTime = () =>
-    new Date().toLocaleString("pt-BR", {
+  // Timestamp
+  const getFormattedTime = () => {
+    return new Date().toLocaleString("pt-BR", {
       timeZone: "America/Sao_Paulo",
       hour12: false,
     });
+  };
 
-  // ✉️ Envio de formulário
+  // Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -78,62 +114,80 @@ const Contact = () => {
       return;
     }
 
+    if (!formData.turnstileToken) {
+      toast.error("Confirme que você não é um robô.");
+      return;
+    }
+
     if (isSubmitting) return;
 
     if (lastSubmissionTime) {
       const elapsed = Date.now() - lastSubmissionTime;
       if (elapsed < COOLDOWN_MS) {
         const seconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
-        toast.error(`Aguarde ${seconds}s antes de enviar uma nova mensagem.`);
+        toast.error(`Aguarde ${seconds}s para enviar novamente.`);
         return;
       }
     }
 
-    const normalizedData = {
-      ...formData,
+    const payload = {
+      name: formData.name,
+      email: formData.email,
       phone: normalizePhone(formData.phone),
+      message: formData.message,
+      turnstileToken: formData.turnstileToken,
       time: getFormattedTime(),
-      company: botField.trim() || "",
     };
 
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-
     setIsSubmitting(true);
+
     try {
-      const response = await fetch(`${BACKEND_URL}/api/contact`, {
+      const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "X-Origin-Url": window.location.href,
         },
-        body: JSON.stringify(normalizedData),
-        signal: controller.signal,
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        const errorBody = await response.text().catch(() => "");
-        throw new Error(errorBody || `Erro HTTP ${response.status}`);
+        const error = await response.text();
+        throw new Error(error || "Erro no servidor");
       }
 
-      toast.success("Mensagem enviada com sucesso! Entraremos em contato em breve.");
-      setFormData({ name: "", email: "", phone: "", message: "" });
+      toast.success("Mensagem enviada com sucesso!");
+
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        message: "",
+        turnstileToken: "",
+      });
+
       setBotField("");
       setLastSubmissionTime(Date.now());
-    } catch (error: any) {
-      if (error.name === "AbortError") {
-        toast.error("Tempo de resposta excedido. Verifique sua conexão.");
-      } else {
-        toast.error("Erro ao enviar mensagem. Tente novamente.");
+
+      // RESET DO TURNSTILE
+      if ((window as any).turnstile && turnstileRef.current) {
+        (window as any).turnstile.reset(turnstileRef.current);
       }
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Erro ao enviar mensagem. Tente novamente.");
     } finally {
-      window.clearTimeout(timeoutId);
       setIsSubmitting(false);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
-    setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
+  // Input handler
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setFormData((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
+  };
 
   return (
     <section id="contato" className="py-24 px-4 gradient-dark">
@@ -146,9 +200,11 @@ const Contact = () => {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* 🧭 Coluna lateral */}
+
+          {/* Painéis laterais */}
           <div className="space-y-6 animate-fade-in">
-            {/* 📞 Telefone */}
+            
+            {/* Telefone + WhatsApp */}
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-6">
                 <div className="flex items-start gap-4">
@@ -164,6 +220,7 @@ const Contact = () => {
                         Informe seu telefone no formulário e entraremos em contato.
                       </p>
                     )}
+
                     {whatsappLink && (
                       <a
                         href={whatsappLink}
@@ -180,10 +237,10 @@ const Contact = () => {
               </CardContent>
             </Card>
 
-            {/* 📸 Instagram */}
-            {CONTACT_INSTAGRAM && (
-              <Card className="bg-card/50 backdrop-blur border-border/50">
-                <CardContent className="p-6">
+            {/* Instagram */}
+            <Card className="bg-card/50 backdrop-blur border-border/50">
+              <CardContent className="p-6">
+                {CONTACT_INSTAGRAM ? (
                   <a
                     href={CONTACT_INSTAGRAM}
                     target="_blank"
@@ -200,11 +257,21 @@ const Contact = () => {
                       </p>
                     </div>
                   </a>
-                </CardContent>
-              </Card>
-            )}
+                ) : (
+                  <div className="flex items-start gap-4">
+                    <div className="p-3 rounded-full bg-primary/10">
+                      <Instagram className="w-6 h-6 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-bold mb-2">Redes sociais</h3>
+                      <p className="text-muted-foreground">Em breve.</p>
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-            {/* 📍 Localização */}
+            {/* Localização */}
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-6">
                 <div className="flex items-start gap-4">
@@ -221,7 +288,7 @@ const Contact = () => {
               </CardContent>
             </Card>
 
-            {/* 🗺️ Mapa embed */}
+            {/* Mapa */}
             {CONTACT_MAP_EMBED_URL && (
               <Card className="bg-card/50 backdrop-blur border-border/50 overflow-hidden">
                 <CardContent className="p-0">
@@ -230,8 +297,8 @@ const Contact = () => {
                     width="100%"
                     height="200"
                     style={{ border: 0 }}
-                    allowFullScreen
                     loading="lazy"
+                    allowFullScreen
                     referrerPolicy="no-referrer-when-downgrade"
                     title="Localização"
                   />
@@ -240,11 +307,13 @@ const Contact = () => {
             )}
           </div>
 
-          {/* ✉️ Formulário */}
+          {/* FORMULÁRIO */}
           <div className="lg:col-span-2 animate-fade-in-up">
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-8">
                 <form onSubmit={handleSubmit} className="space-y-6">
+
+                  {/* honeypot */}
                   <div className="hidden" aria-hidden>
                     <input
                       id="company"
@@ -253,7 +322,7 @@ const Contact = () => {
                       tabIndex={-1}
                       autoComplete="off"
                       value={botField}
-                      onChange={(e) => setBotField(e.target.value)}
+                      onChange={(event) => setBotField(event.target.value)}
                     />
                   </div>
 
@@ -297,6 +366,9 @@ const Contact = () => {
                     className="bg-background/50 resize-none"
                   />
 
+                  {/* Cloudflare Turnstile */}
+                  <div ref={turnstileRef} className="my-4"></div>
+
                   <Button
                     type="submit"
                     size="lg"
@@ -309,6 +381,7 @@ const Contact = () => {
               </CardContent>
             </Card>
           </div>
+
         </div>
       </div>
     </section>
