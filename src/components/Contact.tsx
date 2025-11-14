@@ -3,7 +3,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Instagram, Phone, MapPin, MessageCircle } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 const CONTACT_PHONE = import.meta.env.VITE_CONTACT_PHONE || "";
@@ -12,14 +12,9 @@ const CONTACT_INSTAGRAM = import.meta.env.VITE_CONTACT_INSTAGRAM || "";
 const CONTACT_LOCATION = import.meta.env.VITE_CONTACT_LOCATION || "";
 const CONTACT_MAP_EMBED_URL =
   import.meta.env.VITE_CONTACT_MAP_EMBED_URL || import.meta.env.VITE_CONTACT_MAP_URL || "";
+
+const API_URL = import.meta.env.VITE_API_URL;
 const COOLDOWN_MS = 30_000;
-const EMAILJS_SERVICE_ID = import.meta.env.VITE_EMAILJS_SERVICE_ID || "";
-const EMAILJS_TEMPLATE_ID = import.meta.env.VITE_EMAILJS_TEMPLATE_ID || "";
-const EMAILJS_PUBLIC_KEY = import.meta.env.VITE_EMAILJS_PUBLIC_KEY || "";
-const EMAILJS_ACCESS_TOKEN = import.meta.env.VITE_EMAILJS_ACCESS_TOKEN || "";
-const EMAILJS_ENDPOINT =
-  import.meta.env.VITE_EMAILJS_ENDPOINT || "https://api.emailjs.com/api/v1.0/email/send";
-const REQUEST_TIMEOUT_MS = 10_000;
 
 const Contact = () => {
   const [formData, setFormData] = useState({
@@ -27,12 +22,45 @@ const Contact = () => {
     email: "",
     phone: "",
     message: "",
+    turnstileToken: "",
   });
+
   const [botField, setBotField] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [lastSubmissionTime, setLastSubmissionTime] = useState<number | null>(null);
 
-  // 🧩 Normaliza o telefone (remove símbolos e adiciona +55 se faltar)
+  const turnstileRef = useRef<HTMLDivElement | null>(null);
+
+  // -------------------------------
+  // Cloudflare Turnstile
+  // -------------------------------
+  useEffect(() => {
+    (window as any).onTurnstileSuccess = (token: string) => {
+      console.log("Turnstile token:", token);
+
+      setFormData((prev) => ({
+        ...prev,
+        turnstileToken: token,
+      }));
+    };
+
+    const interval = setInterval(() => {
+      if ((window as any).turnstile && turnstileRef.current) {
+        (window as any).turnstile.render(turnstileRef.current, {
+          sitekey: import.meta.env.VITE_TURNSTILE_SITE_KEY,
+          callback: (token: string) => {
+            (window as any).onTurnstileSuccess(token);
+          },
+        });
+
+        clearInterval(interval);
+      }
+    }, 200);
+
+    return () => clearInterval(interval);
+  }, []);
+
+  // Normaliza telefone
   const normalizePhone = (phone: string) => {
     const digits = phone.replace(/\D/g, "");
     const cleaned = digits.startsWith("0") ? digits.slice(1) : digits;
@@ -40,16 +68,13 @@ const Contact = () => {
   };
 
   const phoneSource = CONTACT_WHATSAPP || CONTACT_PHONE;
+
   const whatsappLink = phoneSource
-    ? `https://wa.me/${normalizePhone(
-        phoneSource,
-      )}?text=Ol%C3%A1!%20Gostaria%20de%20solicitar%20um%20or%C3%A7amento.`
+    ? `https://wa.me/${normalizePhone(phoneSource)}?text=Ol%C3%A1!%20Gostaria%20de%20solicitar%20um%20or%C3%A7amento.`
     : "";
 
-  // 🕒 Timestamp formatado
   const getFormattedTime = () => {
-    const date = new Date();
-    return date.toLocaleString("pt-BR", {
+    return new Date().toLocaleString("pt-BR", {
       timeZone: "America/Sao_Paulo",
       hour12: false,
     });
@@ -80,106 +105,74 @@ const Contact = () => {
       return;
     }
 
-    if (isSubmitting) {
+    if (!formData.turnstileToken) {
+      toast.error("Confirme que você não é um robô.");
       return;
     }
+
+    if (isSubmitting) return;
 
     if (lastSubmissionTime) {
       const elapsed = Date.now() - lastSubmissionTime;
       if (elapsed < COOLDOWN_MS) {
         const seconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
-        toast.error(`Aguarde ${seconds}s antes de enviar uma nova mensagem.`);
+        toast.error(`Aguarde ${seconds}s para enviar novamente.`);
         return;
       }
     }
 
-    if (!EMAILJS_SERVICE_ID || !EMAILJS_TEMPLATE_ID || !EMAILJS_PUBLIC_KEY) {
-      toast.error("Configuração do EmailJS ausente. Verifique o arquivo .env.");
-      console.error("Missing EmailJS config:", {
-        EMAILJS_SERVICE_ID,
-        EMAILJS_TEMPLATE_ID,
-        EMAILJS_PUBLIC_KEY,
-      });
-      return;
-    }
-
-    if (isSubmitting) {
-      return;
-    }
-
-    if (lastSubmissionTime) {
-      const elapsed = Date.now() - lastSubmissionTime;
-      if (elapsed < COOLDOWN_MS) {
-        const seconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
-        toast.error(`Aguarde ${seconds}s antes de enviar uma nova mensagem.`);
-        return;
-      }
-    }
-
-    const normalizedData = {
-      ...formData,
+    const payload = {
+      name: formData.name,
+      email: formData.email,
       phone: normalizePhone(formData.phone),
+      message: formData.message,
+      turnstileToken: formData.turnstileToken,
       time: getFormattedTime(),
     };
-
-    const templateParams = {
-      ...normalizedData,
-      reply_to: formData.email,
-      bot_field: botField.trim() || undefined,
-      origin: window.location.href,
-    };
-
-    const payload: Record<string, unknown> = {
-      service_id: EMAILJS_SERVICE_ID,
-      template_id: EMAILJS_TEMPLATE_ID,
-      user_id: EMAILJS_PUBLIC_KEY,
-      template_params: templateParams,
-    };
-
-    if (EMAILJS_ACCESS_TOKEN) {
-      payload.accessToken = EMAILJS_ACCESS_TOKEN;
-    }
-
-    const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(EMAILJS_ENDPOINT, {
+      const response = await fetch(API_URL, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Accept: "application/json",
         },
         body: JSON.stringify(payload),
-        signal: controller.signal,
       });
 
       if (!response.ok) {
-        const errorBody = await response.text().catch(() => "");
-        throw new Error(errorBody || `EmailJS retornou o status ${response.status}`);
+        const error = await response.text();
+        throw new Error(error || "Erro no servidor");
       }
 
-      toast.success("Mensagem enviada com sucesso! Entraremos em contato em breve.");
-      setFormData({ name: "", email: "", phone: "", message: "" });
+      toast.success("Mensagem enviada com sucesso!");
+
+      setFormData({
+        name: "",
+        email: "",
+        phone: "",
+        message: "",
+        turnstileToken: "",
+      });
+
       setBotField("");
       setLastSubmissionTime(Date.now());
-    } catch (error) {
-      console.error("Erro ao enviar mensagem:", error);
 
-      if (error instanceof DOMException && error.name === "AbortError") {
-        toast.error("Tempo de resposta excedido. Verifique sua conexão e tente novamente.");
-        return;
+      // RESET DO TURNSTILE
+      if ((window as any).turnstile && turnstileRef.current) {
+        (window as any).turnstile.reset(turnstileRef.current);
       }
 
+    } catch (err) {
+      console.error(err);
       toast.error("Erro ao enviar mensagem. Tente novamente.");
     } finally {
-      window.clearTimeout(timeoutId);
       setIsSubmitting(false);
     }
   };
 
+  // Input handler
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setFormData((prev) => ({
       ...prev,
@@ -198,7 +191,8 @@ const Contact = () => {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Informações de contato */}
+
+          {/* Painéis laterais */}
           <div className="space-y-6 animate-fade-in">
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-6">
@@ -212,9 +206,10 @@ const Contact = () => {
                       <p className="text-muted-foreground">{CONTACT_PHONE}</p>
                     ) : (
                       <p className="text-muted-foreground">
-                        Informe seu telefone no formulário e entraremos em contato com você.
+                        Informe seu telefone no formulário e entraremos em contato.
                       </p>
                     )}
+
                     {whatsappLink && (
                       <a
                         href={whatsappLink}
@@ -257,9 +252,7 @@ const Contact = () => {
                     </div>
                     <div>
                       <h3 className="font-bold mb-2">Redes sociais</h3>
-                      <p className="text-muted-foreground">
-                        Nossas redes sociais serão divulgadas em breve.
-                      </p>
+                      <p className="text-muted-foreground">Em breve.</p>
                     </div>
                   </div>
                 )}
@@ -290,8 +283,8 @@ const Contact = () => {
                     width="100%"
                     height="200"
                     style={{ border: 0 }}
-                    allowFullScreen
                     loading="lazy"
+                    allowFullScreen
                     referrerPolicy="no-referrer-when-downgrade"
                     title="Localização"
                   />
@@ -300,15 +293,14 @@ const Contact = () => {
             )}
           </div>
 
-          {/* Formulário */}
+          {/* FORMULÁRIO */}
           <div className="lg:col-span-2 animate-fade-in-up">
             <Card className="bg-card/50 backdrop-blur border-border/50">
               <CardContent className="p-8">
                 <form onSubmit={handleSubmit} className="space-y-6">
+
+                  {/* honeypot */}
                   <div className="hidden" aria-hidden>
-                    <label htmlFor="company" className="sr-only">
-                      Não preencha este campo
-                    </label>
                     <input
                       id="company"
                       name="company"
@@ -360,6 +352,9 @@ const Contact = () => {
                     className="bg-background/50 resize-none"
                   />
 
+                  {/* Cloudflare Turnstile */}
+                  <div ref={turnstileRef} className="my-4"></div>
+
                   <Button
                     type="submit"
                     size="lg"
@@ -372,6 +367,7 @@ const Contact = () => {
               </CardContent>
             </Card>
           </div>
+
         </div>
       </div>
     </section>
